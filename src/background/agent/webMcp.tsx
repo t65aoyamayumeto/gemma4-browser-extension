@@ -28,16 +28,62 @@ export interface WebMCPTool {
   execute: (args: Record<string, any>) => Promise<string>;
 }
 
+interface FunctionGemmaToolPropertyString {
+  type: "string";
+  description: string;
+  enum?: Array<string>;
+}
+
+interface FunctionGemmaToolPropertyNumber {
+  type: "number";
+  description: string;
+}
+
+interface FunctionGemmaToolPropertyInteger {
+  type: "integer";
+  description: string;
+}
+
+interface FunctionGemmaToolPropertyBoolean {
+  type: "boolean";
+  description: string;
+}
+
+interface FunctionGemmaToolPropertyArray {
+  type: "array";
+  description: string;
+  items: { type: "number" | "string" | "boolean" };
+}
+
+interface FunctionGemmaTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: "object";
+      properties: Record<
+        string,
+        | FunctionGemmaToolPropertyString
+        | FunctionGemmaToolPropertyNumber
+        | FunctionGemmaToolPropertyInteger
+        | FunctionGemmaToolPropertyBoolean
+        | FunctionGemmaToolPropertyArray
+      >;
+      required: Array<string>;
+    };
+  };
+}
+
 export const webMCPToolToChatTemplateTool = (
   webMCPTool: WebMCPTool
-): {
-  name: string;
-  description: string;
-  parameters: Record<string, any>;
-} => ({
-  name: webMCPTool.name,
-  description: webMCPTool.description,
-  parameters: webMCPTool.inputSchema,
+): FunctionGemmaTool => ({
+  type: "function",
+  function: {
+    name: webMCPTool.name,
+    description: webMCPTool.description,
+    parameters: webMCPTool.inputSchema,
+  },
 });
 
 export const validateWebMCPToolArguments = (
@@ -46,14 +92,27 @@ export const validateWebMCPToolArguments = (
 ): Record<string, any> => {
   const expectedArguments = tool.inputSchema.properties;
 
-  const validArguments = Object.entries(args).filter(([key, value]) => {
-    const isValidKey = key in expectedArguments;
-    const expectedType = expectedArguments[key]?.type;
-    const actualType = typeof value;
-    const isValidType = expectedType === actualType;
+  const validArguments = Object.entries(args)
+    .map(([key, value]) => {
+      const expectedType = expectedArguments[key]?.type;
+      const actualType = typeof value;
+      if (actualType === "number" && expectedType === "string") {
+        return [key, value.toString()];
+      }
+      if (actualType === "string" && expectedType === "number") {
+        return [key, Number(value)];
+      }
 
-    return isValidKey && isValidType;
-  });
+      return [key, value];
+    })
+    .filter(([key, value]) => {
+      const isValidKey = key in expectedArguments;
+      const expectedType = expectedArguments[key]?.type;
+      const actualType = typeof value;
+      const isValidType = expectedType === actualType;
+
+      return isValidKey && isValidType;
+    });
 
   const returnArgs: Record<string, any> = validArguments.reduce((acc, curr) => {
     return { ...acc, [curr[0]]: curr[1] };
@@ -92,5 +151,6 @@ export const executeWebMCPTool = async (
   }
 
   const validatedArgs = validateWebMCPToolArguments(tool, parsedArgs);
+
   return await tool.execute(validatedArgs);
 };

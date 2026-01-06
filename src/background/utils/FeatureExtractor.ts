@@ -1,6 +1,6 @@
 import { FeatureExtractionPipeline, pipeline } from "@huggingface/transformers";
 
-import { MODELS } from "../../shared/constants.ts";
+import { FEATURE_EXTRACTION_MODEL, MODELS } from "../../shared/constants.ts";
 import { calculateDownloadProgress } from "./calculateDownloadProgress.ts";
 
 class FeatureExtractor {
@@ -14,15 +14,20 @@ class FeatureExtractor {
     try {
       const pipe = await pipeline(
         "feature-extraction",
-        MODELS.allMiniLM.modelId,
+        MODELS[FEATURE_EXTRACTION_MODEL].modelId,
         {
-          dtype: MODELS.allMiniLM.dtype,
+          dtype: MODELS[FEATURE_EXTRACTION_MODEL].dtype,
           device: "webgpu",
           progress_callback: calculateDownloadProgress(({ percentage }) =>
-            onDownloadProgress(MODELS.allMiniLM.modelId, percentage)
+            onDownloadProgress(
+              MODELS[FEATURE_EXTRACTION_MODEL].modelId,
+              percentage >= 99.9 ? 99.9 : percentage
+            )
           ),
         }
       );
+
+      onDownloadProgress(MODELS[FEATURE_EXTRACTION_MODEL].modelId, 100);
       this.pipeline = pipe as FeatureExtractionPipeline;
       return this.pipeline;
     } catch (error) {

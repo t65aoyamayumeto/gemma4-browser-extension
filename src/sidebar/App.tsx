@@ -21,6 +21,7 @@ export default function App() {
   useEffect(() => {
     const messageListener = (message: any) => {
       if (message.type === BackgroundMessages.DOWNLOAD_PROGRESS) {
+        console.log(message.modelId, message.percentage);
         setDownloadingModels((prev) => ({
           ...prev,
           [message.modelId]: message.percentage,
@@ -76,8 +77,9 @@ export default function App() {
               REQUIRED_MODEL_IDS.reduce(
                 (acc, id) =>
                   acc +
-                  (Object.values(MODELS).find(({ modelId }) => modelId === id)
-                    ?.size || 0),
+                  (Object.values(MODELS).find(
+                    ({ modelId, dtype }) => modelId + dtype === id
+                  )?.size || 0),
                 0
               )
             )}
@@ -88,7 +90,7 @@ export default function App() {
           {Object.entries(downloadingModels).map(([id, progress]) => (
             <Slider
               key={id}
-              text={`${id} (${progress.toFixed(0)}%)`}
+              text={`${id} (${progress.toFixed(2)}%)`}
               width={progress}
             />
           ))}

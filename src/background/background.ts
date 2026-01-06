@@ -20,11 +20,11 @@ import VectorHistory from "./vectorHistory/VectorHistory.ts";
 
 import Tab = chrome.tabs.Tab;
 
-let lastProgress: number = 0;
+let lastProgress: Record<string, number> = {};
 const onModelDownloadProgress = (modelId: string, percentage: number) => {
   const rounded = Math.round(percentage * 100) / 100;
-  if (rounded === lastProgress) return;
-  lastProgress = rounded;
+  if (rounded === lastProgress[modelId]) return;
+  lastProgress[modelId] = rounded;
 
   chrome.runtime.sendMessage({
     type: BackgroundMessages.DOWNLOAD_PROGRESS,
@@ -38,16 +38,16 @@ const featureExtractor = new FeatureExtractor();
 const vectorHistory = new VectorHistory(featureExtractor);
 
 // Register tab management tools
-agent.setTool(getOpenTabsTool);
+/*agent.setTool(getOpenTabsTool);
 agent.setTool(goToTabTool);
 agent.setTool(openUrlTool);
-agent.setTool(closeTabTool);
+agent.setTool(closeTabTool);*/
 
 // Register search tools
 //agent.setTool(googleSearchTool);
 
 // Register vector history tools
-agent.setTool(vectorHistory.findHistoryTool);
+//agent.setTool(vectorHistory.findHistoryTool);
 
 // Register website content tools
 agent.setTool(createAskWebsiteTool(featureExtractor));

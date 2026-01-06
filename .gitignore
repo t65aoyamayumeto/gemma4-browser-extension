@@ -25,6 +25,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env
 
 # Model
-public/functiongemma-270m-it-ONNX
+public/models

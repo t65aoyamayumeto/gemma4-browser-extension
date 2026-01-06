@@ -7,7 +7,7 @@ import {
   TextStreamer,
 } from "@huggingface/transformers";
 
-import { MODELS } from "../../shared/constants.ts";
+import { MODELS, TEXT_GENERATION_MODEL } from "../../shared/constants.ts";
 import { ChatMessage, ChatMessageAssistant } from "../../shared/types.ts";
 import { calculateDownloadProgress } from "../utils/calculateDownloadProgress.ts";
 import { extractToolCalls } from "./extractToolCalls.ts";
@@ -30,21 +30,18 @@ const getTextGenerationPipeline = async (
   if (pipeline) return pipeline;
 
   try {
-    const m = MODELS.granite3B;
+    const m = MODELS[TEXT_GENERATION_MODEL];
 
-    const tokenizer = await AutoTokenizer.from_pretrained(m.modelId, {
-      progress_callback: calculateDownloadProgress(({ percentage }) =>
-        onDownloadProgress(m.modelId, percentage)
-      ),
-    });
+    const tokenizer = await AutoTokenizer.from_pretrained(m.modelId);
 
     const model = await AutoModelForCausalLM.from_pretrained(m.modelId, {
       dtype: m.dtype,
       device: "webgpu",
       progress_callback: calculateDownloadProgress(({ percentage }) =>
-        onDownloadProgress(m.modelId, percentage)
+        onDownloadProgress(m.modelId, percentage >= 99.9 ? 99.9 : percentage)
       ),
     });
+    onDownloadProgress(m.modelId, 100);
     pipeline = { tokenizer, model };
     return pipeline;
   } catch (error) {
@@ -53,15 +50,15 @@ const getTextGenerationPipeline = async (
   }
 };
 
+const SYSTEM = {
+  role: "developer",
+  content:
+    "You are a helpful assistant. You are a model that can do function calling with the following functions:",
+};
+
 class Agent {
   private pastKeyValues: any = null;
-  private messages: Array<Message> = [
-    {
-      role: "system",
-      content:
-        "You are a helpful assistant. If you use a tool, explain first what you are doing.",
-    },
-  ];
+  private messages: Array<Message> = [SYSTEM];
   private _chatMessages: Array<ChatMessage> = [];
   private chatMessagesListener: Array<
     (chatMessages: Array<ChatMessage>) => void
@@ -90,14 +87,25 @@ class Agent {
   public getTextGenerationPipeline = getTextGenerationPipeline;
 
   public generateText = async (
-    prompt: string,
-    role: "user" | "tool" = "user",
+    input: string | Array<{ name: string; content: string }>,
     onResponseUpdate: (response: string) => void = () => {}
   ): Promise<string> => {
-    this.messages = [...this.messages, { role, content: prompt }];
+    if (typeof input === "string") {
+      this.messages = [...this.messages, { role: "user", content: input }];
+    } else {
+      for (const toolResponse of input) {
+        this.messages.push({
+          role: "tool",
+          name: toolResponse.name,
+          content: toolResponse.content,
+        } as Message);
+      }
+    }
+
     const { tokenizer, model } = await this.getTextGenerationPipeline();
 
-    const input = tokenizer.apply_chat_template(this.messages, {
+    console.log("apply_chat_template", this.messages);
+    const tokenizerInput = tokenizer.apply_chat_template(this.messages, {
       tools: this.tools.map(webMCPToolToChatTemplateTool),
       add_generation_prompt: true,
       return_dict: true,
@@ -106,6 +114,9 @@ class Agent {
     let response = "";
 
     this.messages.push({ role: "assistant", content: "" });
+
+    const removeEosToken = (content: string): string =>
+      content.replace(tokenizer.eos_token, "");
 
     const streamer = new TextStreamer(tokenizer, {
       skip_prompt: true,
@@ -116,14 +127,14 @@ class Agent {
           ...message,
           content: index === all.length - 1 ? response : message.content,
         }));
-        onResponseUpdate(response.replace(/<\|end_of_text\|>$/, ""));
+        onResponseUpdate(removeEosToken(response));
       },
     });
 
     // Generate the response
     const output: any = await model.generate({
-      ...input,
-      // @ts-expect-error
+      ...tokenizerInput,
+      // @ts-ignore
       past_key_values: this.pastKeyValues,
       max_new_tokens: 1024,
       do_sample: false,
@@ -133,24 +144,45 @@ class Agent {
     const { sequences, past_key_values } = output;
     this.pastKeyValues = past_key_values;
 
-    const inputIds = (input as any).input_ids;
+    const template = tokenizer.batch_decode(sequences, {
+      skip_special_tokens: false,
+    })[0];
+    console.log(template);
+
+    const inputIds = (tokenizerInput as any).input_ids;
     response = tokenizer
       .batch_decode(sequences.slice(null, [inputIds.dims[1], null]), {
         skip_special_tokens: false,
       })[0]
       .replace(/<\|end_of_text\|>$/, "");
 
-    this.messages = this.messages.map((message, index, all) => ({
-      ...message,
-      content: index === all.length - 1 ? response : message.content,
-    }));
+    // Extract tool calls from response and update assistant message
+    const { toolCalls, message: textContent } = extractToolCalls(response);
+
+    this.messages = this.messages.map((msg, index, all) => {
+      if (index === all.length - 1) {
+        // Update last message (assistant) with content and tool_calls
+        const updated: any = {
+          ...msg,
+          content: textContent,
+        };
+        if (toolCalls.length > 0) {
+          updated.tool_calls = toolCalls.map((tc) => ({
+            function: {
+              name: tc.name,
+              arguments: tc.arguments,
+            },
+          }));
+        }
+        return updated;
+      }
+      return msg;
+    });
 
     return response;
   };
 
   public runAgent = async (prompt: string): Promise<void> => {
-    let isUser = true;
-
     this.chatMessages = [
       ...this.chatMessages,
       { role: "user", content: prompt },
@@ -189,35 +221,44 @@ class Agent {
       this.chatMessages = [...prevChatMessages, assistantMessage];
     };
 
-    while (prompt) {
+    let input: string | Array<{ name: string; content: string }> = prompt;
+
+    while (input) {
       const finalResponse = await this.generateText(
-        prompt,
-        isUser ? "user" : "tool",
+        input,
         updateAssistantMessage
       );
-      isUser = false;
+
       const { toolCalls, message } = extractToolCalls(finalResponse);
       messageInThisAgentRun = message;
 
       if (toolCalls.length === 0) {
-        prompt = null;
-      } else {
-        const toolResponses = await Promise.all(
-          toolCalls.map(this.executeToolCall)
-        );
-
-        assistantMessage.tools = assistantMessage.tools.map((tool) => ({
-          ...tool,
-          result:
-            toolResponses.find(({ id }) => id === tool.id)?.result ||
-            tool.result,
-        }));
-
-        this.chatMessages = [...prevChatMessages, assistantMessage];
-        prompt = toolResponses.map(({ result }) => result).join("\n");
+        input = null;
+        continue;
       }
+
+      console.log("toolCalls", toolCalls);
+
+      const toolResponses = await Promise.all(
+        toolCalls.map(this.executeToolCall)
+      );
+
+      assistantMessage.tools = assistantMessage.tools.map((tool) => ({
+        ...tool,
+        result:
+          toolResponses.find(({ id }) => id === tool.id)?.result || tool.result,
+      }));
+
+      this.chatMessages = [...prevChatMessages, assistantMessage];
+
+      input = toolResponses.map((response) => {
+        const toolCall = toolCalls.find((tc) => tc.id === response.id);
+        return {
+          name: toolCall!.name,
+          content: response.result,
+        };
+      });
     }
-    return;
   };
 
   private executeToolCall = async (
@@ -234,7 +275,7 @@ class Agent {
   };
 
   public clear() {
-    this.messages = [];
+    this.messages = [SYSTEM];
     this.pastKeyValues = null;
     this.chatMessages = [];
   }
