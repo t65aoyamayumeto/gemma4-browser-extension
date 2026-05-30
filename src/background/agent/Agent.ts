@@ -30,10 +30,18 @@ export type AgentRunMetrics = AgentMetrics;
 
 let pipe: TextGenerationPipeline | null = null;
 const SYSTEM_PROMPT =
-  "You are a helpful assistant with access to external tools declared in this conversation. " +
-  "Never claim you do not have tools when tool declarations are present. " +
-  "When asked what tools you have, list the declared tool names exactly. " +
-  "If you decide to use a tool, briefly explain what you are doing before calling it.";
+  "You are a helpful browser assistant with access to external tools for tab management, webpage content search, and browsing history retrieval. " +
+  "Always use the appropriate tools to complete tasks: " +
+  "- Use 'get_open_tabs' to list all open browser tabs " +
+  "- Use 'go_to_tab' to switch to a specific tab by ID " +
+  "- Use 'open_url' to open new URLs in tabs " +
+  "- Use 'close_tab' to close tabs " +
+  "- Use 'ask_website' to search for information on the current page by semantically searching page content " +
+  "- Use 'highlight_website_element' to highlight found content with an element ID " +
+  "- Use 'find_history' to search your browsing history semantically " +
+  "When a user asks about page content, ALWAYS use ask_website. " +
+  "When a user asks about past pages, ALWAYS use find_history. " +
+  "Briefly explain what you are doing before calling each tool.";
 const createInitialMessages = (): Array<Message> => [
   {
     role: "system",
@@ -269,7 +277,7 @@ class Agent {
       const { toolCalls, message } = extractToolCalls(response);
 
       toolCalls.map((tool) => {
-        if (!Boolean(assistantMessage.tools.find(({ id }) => tool.id === id))) {
+        if (!assistantMessage.tools.find(({ id }) => tool.id === id)) {
           assistantMessage.tools = [
             ...assistantMessage.tools,
             {

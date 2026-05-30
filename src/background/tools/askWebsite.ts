@@ -184,7 +184,7 @@ export const createAskWebsiteTool = (
   return {
     name: "ask_website",
     description:
-      "Search and retrieve relevant information from the current webpage. Use this tool whenever a user asks a question where you are not sure if you have the necessary informations to answer.",
+      "Search and retrieve relevant information from the current webpage using semantic similarity. This tool extracts page content and finds the most relevant sections matching the user's query. ALWAYS use this tool when a user asks about the content of the current webpage, wants to know what's on the page, asks for information found on the page, or requests a summary or excerpt from the page.",
     inputSchema: {
       type: "object",
       properties: {
