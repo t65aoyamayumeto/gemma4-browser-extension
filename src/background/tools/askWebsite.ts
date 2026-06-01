@@ -58,7 +58,15 @@ class WebsiteContentManager {
     this.currentTabId = tabId;
     this.currentUrl = url;
 
-    this.loadCurrentPage().catch((error) => {
+    this.loadCurrentPage().catch((error: unknown) => {
+      // A missing content script (e.g. chrome:// pages, the web store, or a tab
+      // that has not finished injecting yet) surfaces as a connection error.
+      // This is an expected condition, not a failure, so do not log it as one.
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Could not establish connection")) {
+        this.currentPageParts = [];
+        return;
+      }
       console.error("Failed to load page content:", error);
     });
   }
