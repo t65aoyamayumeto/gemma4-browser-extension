@@ -115,6 +115,15 @@ export const openUrlTool: WebMCPTool = {
     const active = args.active !== undefined ? (args.active as boolean) : true;
 
     try {
+      const parsed = new URL(url);
+      if (!["https:", "http:"].includes(parsed.protocol)) {
+        return `Error: URL scheme "${parsed.protocol}" is not allowed. Only http and https are permitted.`;
+      }
+    } catch {
+      return `Error: Invalid URL: ${url}`;
+    }
+
+    try {
       const tab = await chrome.tabs.create({
         url,
         active,
