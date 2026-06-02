@@ -1,5 +1,10 @@
 # Transformers.js Gemma 4 Browser Assistant
 
+> **このリポジトリは [nico-martin/gemma4-browser-extension](https://github.com/nico-martin/gemma4-browser-extension) のフォークです。**  
+> セキュリティ修正・エージェント動作の改善・バグ修正を加えています。変更内容の詳細は [VERIFICATION_REPORT.md](./VERIFICATION_REPORT.md) を参照してください。
+
+---
+
 ## About this extension
 
 An on-device AI assistant that runs entirely in your browser using WebGPU and Transformers.js. This Chrome extension provides an intelligent agent that can understand natural language commands and interact with your browser through a set of specialized tools.
