@@ -28,6 +28,3 @@ dist-ssr
 
 # Model
 public/gemma-4-E2B-it-ONNX
-
-# Internal reports
-VERIFICATION_REPORT.md
